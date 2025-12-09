@@ -1,6 +1,6 @@
 
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import ttk, scrolledtext
 import threading
 import time
 import re
@@ -51,29 +51,62 @@ class AutoAccepter:
 
         self.config = load_config()
 
+        self.is_dark_mode = True # Default to Dark Mode
+
         # Control Frame
-        control_frame = tk.Frame(root)
-        control_frame.pack(pady=10, padx=10, fill=tk.X)
+        self.control_frame = tk.Frame(root)
+        self.control_frame.pack(pady=10, padx=10, fill=tk.X)
 
         # Interval
-        tk.Label(control_frame, text="Interval (sec):").pack(side=tk.LEFT)
+        self.interval_label = tk.Label(self.control_frame, text="Interval (sec):")
+        self.interval_label.pack(side=tk.LEFT)
         self.interval_var = tk.StringVar(value=str(self.config.get("interval", 1.0)))
-        tk.Entry(control_frame, textvariable=self.interval_var, width=10).pack(side=tk.LEFT, padx=5)
+        self.interval_entry = tk.Entry(self.control_frame, textvariable=self.interval_var, width=10)
+        self.interval_entry.pack(side=tk.LEFT, padx=5)
 
         # Start/Stop Buttons
-        self.start_btn = tk.Button(control_frame, text="Start", command=self.start_monitoring, bg="#ccffcc")
+        self.start_btn = tk.Button(self.control_frame, text="Start", command=self.start_monitoring, bg="#ccffcc")
         self.start_btn.pack(side=tk.LEFT, padx=5)
 
-        self.stop_btn = tk.Button(control_frame, text="Stop", command=self.stop_monitoring, state=tk.DISABLED, bg="#ffcccc")
+        self.stop_btn = tk.Button(self.control_frame, text="Stop", command=self.stop_monitoring, state=tk.DISABLED, bg="#ffcccc")
         self.stop_btn.pack(side=tk.LEFT, padx=5)
 
         # Config Button
-        self.config_btn = tk.Button(control_frame, text="Open Config", command=self.open_config)
+        self.config_btn = tk.Button(self.control_frame, text="Open Config", command=self.open_config)
         self.config_btn.pack(side=tk.LEFT, padx=5)
 
-        # Log Area
-        self.log_area = scrolledtext.ScrolledText(root, state=tk.DISABLED, height=15)
-        self.log_area.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
+        # Theme Toggle
+        self.theme_btn = tk.Button(self.control_frame, text="☀/🌙", command=self.toggle_theme, width=4)
+        self.theme_btn.pack(side=tk.RIGHT, padx=5)
+
+        # Log Area (Treeview for Table Mode)
+        columns = ("time", "status", "message")
+        self.log_tree = ttk.Treeview(root, columns=columns, show="headings", height=15)
+        
+        # Column Headings
+        self.log_tree.heading("time", text="Time")
+        self.log_tree.heading("status", text="Status")
+        self.log_tree.heading("message", text="Message")
+        
+        # Column Configuration
+        self.log_tree.column("time", width=60, anchor=tk.CENTER)
+        self.log_tree.column("status", width=70, anchor=tk.CENTER)
+        self.log_tree.column("message", width=300, anchor=tk.W) # Expandable
+        
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(root, orient=tk.VERTICAL, command=self.log_tree.yview)
+        self.log_tree.configure(yscroll=scrollbar.set)
+        
+        # We need them to be in the same frame to look good. Let's wrap them in a frame.
+        self.log_tree.pack_forget() # Undo the pack above if it was there (it wasn't in this block, but safe to keep logic consistent)
+        
+        self.log_frame = tk.Frame(root)
+        self.log_frame.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
+        
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.apply_theme()
         
         # Log config path for user info
         config_dir = platformdirs.user_config_dir(APP_NAME, APP_AUTHOR)
@@ -83,12 +116,83 @@ class AutoAccepter:
         self.monitor_thread = None
         self.current_stop_event = None
 
+    def toggle_theme(self):
+        self.is_dark_mode = not self.is_dark_mode
+        self.apply_theme()
+
+    def apply_theme(self):
+        style = ttk.Style()
+        style.theme_use("default") # Use default to allow easier color customization specifically for Treeview
+
+        if self.is_dark_mode:
+            bg_color = "#2b2b2b"
+            fg_color = "#ffffff"
+            tree_bg = "#1e1e1e"
+            tree_fg = "#dddddd"
+            tree_sel = "#3e3e3e"
+            
+            # Tags
+            self.log_tree.tag_configure("success", foreground="#90ee90") # Light Green
+            self.log_tree.tag_configure("error", foreground="#ff6b6b")   # Light Red
+            self.log_tree.tag_configure("muted", foreground="#aaaaaa")   # Light Gray
+            self.log_tree.tag_configure("normal", foreground="#ffffff")
+        else:
+            bg_color = "SystemButtonFace" # Default windows gray-ish
+            fg_color = "black"
+            tree_bg = "white"
+            tree_fg = "black"
+            tree_sel = "#3399ff" # Default selection blue-ish
+            
+            # Tags
+            self.log_tree.tag_configure("success", foreground="green")
+            self.log_tree.tag_configure("error", foreground="red")
+            self.log_tree.tag_configure("muted", foreground="gray")
+            self.log_tree.tag_configure("normal", foreground="black")
+
+        # Apply to containers
+        self.root.configure(bg=bg_color)
+        self.control_frame.configure(bg=bg_color)
+        self.log_frame.configure(bg=bg_color)
+        
+        # Apply to labels and standard widgets
+        # Note: Buttons on Windows don't always accept BG changes cleanly without style tweaks, 
+        # but we'll try for the Labels and basics.
+        self.interval_label.configure(bg=bg_color, fg=fg_color)
+        self.interval_entry.configure(bg=tree_bg, fg=tree_fg, insertbackground=fg_color)
+        
+        # Configure Treeview colors via Style
+        style.configure("Treeview", 
+                        background=tree_bg, 
+                        foreground=tree_fg, 
+                        fieldbackground=tree_bg,
+                        borderwidth=0)
+        style.map("Treeview", background=[('selected', tree_sel)], foreground=[('selected', 'white')])
+        
+        # Header style
+        style.configure("Treeview.Heading", background=bg_color, foreground=fg_color, relief="flat")
+        style.map("Treeview.Heading", background=[('active', tree_sel)])
+
     def log(self, message):
         timestamp = time.strftime("%H:%M:%S")
-        self.log_area.config(state=tk.NORMAL)
-        self.log_area.insert(tk.END, f"[{timestamp}] {message}\n")
-        self.log_area.see(tk.END)
-        self.log_area.config(state=tk.DISABLED)
+        
+        # Determine Status and Tag
+        status = "INFO"
+        tag = "normal"
+        
+        msg_lower = message.lower()
+        if "success" in msg_lower:
+            status = "SUCCESS"
+            tag = "success"
+        elif "error" in msg_lower or "fail" in msg_lower:
+            status = "ERROR"
+            tag = "error"
+        elif "checking" in msg_lower or "skipping" in msg_lower:
+            status = "CHECK"
+            tag = "muted"
+        
+        # Insert into Treeview
+        item_id = self.log_tree.insert("", tk.END, values=(timestamp, status, message), tags=(tag,))
+        self.log_tree.see(item_id)
 
     def open_config(self):
         config_dir = platformdirs.user_config_dir(APP_NAME, APP_AUTHOR)
