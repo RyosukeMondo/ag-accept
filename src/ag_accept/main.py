@@ -15,7 +15,7 @@ from pywinauto import Desktop
 from pywinauto.keyboard import send_keys
 import ctypes
 
-APP_NAME = "ag-auto-accept"
+APP_NAME = "ag-accept"
 APP_AUTHOR = "RyosukeMondo"
 
 def load_config():
@@ -51,7 +51,7 @@ def load_config():
 class AutoAccepter:
     def __init__(self, root):
         self.root = root
-        self.root.title("Auto Accepter")
+        self.root.title("Ag-Accept")
         self.root.geometry("500x400")
 
         self.config = load_config()
@@ -271,7 +271,7 @@ class AutoAccepter:
                         try:
                             title = w.window_text()
                             # Updated to check for "Auto Accepter" to prevent self-detection if title changes
-                            if "Auto Accepter" in title or "Antigravity Monitor" in title:
+                            if "Ag-Accept" in title or "Antigravity Monitor" in title:
                                 continue # Skip self
                             
                             self.log(f"Checking window: '{title}'")

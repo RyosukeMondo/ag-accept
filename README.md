@@ -1,4 +1,4 @@
-# Antigravity Auto-Accept
+# Ag-Accept
 
 A lightweight tool to automatically accept antigravity windows.
 
@@ -7,7 +7,7 @@ A lightweight tool to automatically accept antigravity windows.
 You can install this tool directly from GitHub using `pipx`. This ensures it runs in an isolated environment while being globally accessible.
 
 ```bash
-pipx install git+https://github.com/RyosukeMondo/ag-auto-accept.git --force
+pipx install git+https://github.com/RyosukeMondo/ag-accept.git --force
 ```
 
 ## Usage
