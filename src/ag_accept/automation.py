@@ -58,10 +58,12 @@ class IdeStrategy:
                     # Find all potential windows
                     windows = self.window_service.get_all_windows(exclude_titles=["Ag-Accept", "Antigravity Monitor"])
                     
+                    if state_callback: state_callback(STATE_SEARCHING_WINDOW)
+
                     for window in windows:
-                        if state_callback: state_callback(STATE_SEARCHING_WINDOW)
                         name = window.Name
                         if target_title_part in name:
+                            if state_callback: state_callback(STATE_WINDOW_FOUND)
                             if state_callback: state_callback(STATE_WINDOW_FOUND)
                             # Use TextQueryService for recursive search
                             if state_callback: state_callback(STATE_CHECKING_CONTEXT)
