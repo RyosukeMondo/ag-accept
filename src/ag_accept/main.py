@@ -1,25 +1,31 @@
 
 import tkinter as tk
-from ag_accept.config import ConfigManager
+import customtkinter as ctk
+from injector import Injector
+from ag_accept.di_module import AppModule
 from ag_accept.ui import AutoAccepterUI
-from ag_accept.automation import IdeStrategy, AgentManagerStrategy, NativeAutomationProvider
-
-def strategy_factory(mode):
-    provider = NativeAutomationProvider()
-    if mode == "IDE":
-        return IdeStrategy(provider)
-    elif mode == "AgentManager":
-        return AgentManagerStrategy(provider)
-    return None
 
 def main():
     try:
-        root = tk.Tk()
+        # Initialize DI
+        injector = Injector([AppModule])
         
-        # Dependency Injection
-        config_manager = ConfigManager()
+        # Setup CustomTkinter
+        ctk.set_appearance_mode("Dark")  # Modes: "System" (standard), "Dark", "Light"
+        ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
         
-        app = AutoAccepterUI(root, config_manager, strategy_factory)
+        # Root CTk
+        root = ctk.CTk()
+        
+        # Binding specific instance
+        injector.binder.bind(ctk.CTk, to=root, scope=None)
+        # Also bind tk.Tk just in case as CTk inherits from it? 
+        # Actually CTk inherits from Tk or Widget? 
+        # CTk inherits from CTkBaseClass -> tkinter.Tk usually.
+        injector.binder.bind(tk.Tk, to=root, scope=None) 
+        
+        # Now we can resolve UI
+        app = injector.get(AutoAccepterUI)
         
         root.mainloop()
     except Exception as e:
