@@ -25,6 +25,71 @@ STATE_BUTTON_FAILED = "BUTTON_FAILED"
 STATE_ACTION_SUCCESS = "ACTION_SUCCESS"
 STATE_ACTION_FAILED = "ACTION_FAILED"
 
+def process_window(window: Any, text_service: TextQueryService, window_service: WindowService, logger: Callable[[str], None], state_callback: Callable[[str], None], context_texts: List[str], search_texts: List[str]):
+    """
+    Shared logic to process a single window:
+    1. Check Context
+    2. Check Button
+    3. Action
+    """
+    name = window.Name
+    if state_callback: state_callback(STATE_WINDOW_FOUND)
+    
+    # Context Check
+    context_found = False
+    if state_callback: state_callback(STATE_CHECKING_CONTEXT)
+    
+    if not context_texts:
+        context_found = True
+    else:
+        if text_service.has_text_recursive(window, context_texts):
+            context_found = True
+    
+    if not context_found:
+        if state_callback: state_callback(STATE_CONTEXT_FAILED)
+        return False # Stop processing this window if context fails
+        
+    if state_callback: state_callback(STATE_CONTEXT_MATCHED)
+
+    # Button Check
+    if state_callback: state_callback(STATE_SEARCHING_BUTTON)
+    found_button = text_service.find_button_with_text(window, search_texts)
+    
+    if found_button:
+        if state_callback: state_callback(STATE_BUTTON_FOUND)
+        btn_name = found_button.Name
+        logger(f"Found button: '{btn_name}' in '{name}'")
+        
+        # Focus
+        window_service.focus_window(window)
+        
+        try:
+            found_button.Invoke()
+            logger(f"Clicked '{btn_name}' (Invoke)")
+            if state_callback: state_callback(STATE_ACTION_SUCCESS)
+        except:
+            try:
+                found_button.Click()
+                logger(f"Clicked '{btn_name}' (Click)")
+                if state_callback: state_callback(STATE_ACTION_SUCCESS)
+            except Exception as e:
+                # Fallback to SendKeys
+                try:
+                     window.SendKeys('{Alt}{Enter}')
+                     logger("Sent {Alt}{Enter} (Fallback)")
+                     if state_callback: state_callback(STATE_ACTION_SUCCESS)
+                except Exception as e2:
+                    logger(f"Action failed: {e2}")
+                    if state_callback: state_callback(STATE_ACTION_FAILED)
+        
+        # Restore Focus
+        window_service.restore_previous_focus()
+        return True # Action taken
+    else:
+        if state_callback: state_callback(STATE_BUTTON_FAILED)
+        return False
+
+
 class AutomationStrategy(Protocol):
     def run(self, stop_event: threading.Event, snapshot_event: threading.Event, config_manager: Any, logger: Callable[[str], None], state_callback: Callable[[str], None] = None, debug: bool = False):
         """Run the automation loop."""
@@ -41,10 +106,20 @@ class IdeStrategy:
         pythoncom.CoInitialize()
         try:
             target_title_part = config_manager.get("target_window_title", "Antigravity")
-            search_texts = config_manager.get("search_texts_ide", ["Run command?", "Reject", "Accept"])
-            interval = config_manager.get("interval", 1.0)
+            
+            # Consolidated Config: Use AgentManager keys as primary or merge?
+            # User asked to Reuse AgentManager logic.
+            raw_search_texts = config_manager.get("search_texts_agent_manager", ["Accept"])
+            search_texts = [s.strip() for s in raw_search_texts if s]
+            
+            # Merge with IDE defaults if empty?
+            if not search_texts: 
+                 search_texts = config_manager.get("search_texts_ide", ["Run command?", "Reject", "Accept"])
 
-            logger("Starting IDE Strategy (refactored)...")
+            context_texts = config_manager.get("context_text_agent_manager", ["Run command?"])
+            interval = config_manager.get("interval", 1.0)
+            
+            logger("Starting IDE Strategy (Unified)...")
 
             while not stop_event.is_set():
                 if debug and snapshot_event.is_set():
@@ -60,30 +135,17 @@ class IdeStrategy:
                     
                     if state_callback: state_callback(STATE_SEARCHING_WINDOW)
 
+                    width_found_any = False
                     for window in windows:
                         name = window.Name
                         if target_title_part in name:
-                            if state_callback: state_callback(STATE_WINDOW_FOUND)
-                            if state_callback: state_callback(STATE_WINDOW_FOUND)
-                            # Use TextQueryService for recursive search
-                            if state_callback: state_callback(STATE_CHECKING_CONTEXT)
-                            if self.text_service.has_text_recursive(window, search_texts):
-                                if state_callback: state_callback(STATE_CONTEXT_MATCHED)
-                                logger(f"Found target text in '{name}'. Activating...")
-                                
-                                self.window_service.focus_window(window)
-                                
-                                try:
-                                    if state_callback: state_callback(STATE_ACTION_SUCCESS) # Treat as success event though just preparing
-                                    # Send keys - Trying explicit {Alt}{Enter} instead of %{Enter}
-                                    window.SendKeys('{Alt}{Enter}')
-                                    logger("Sent {Alt}{Enter}")
-                                    time.sleep(0.5)
-                                except Exception as e:
-                                    if state_callback: state_callback(STATE_ACTION_FAILED)
-                                    logger(f"SendKeys error: {e}")
-                            else:
-                                if state_callback: state_callback(STATE_CONTEXT_FAILED)
+                            width_found_any = True
+                            # Process this window fully
+                            process_window(window, self.text_service, self.window_service, logger, state_callback, context_texts, search_texts)
+                    
+                    if not width_found_any:
+                         # Maybe set to idle or searching?
+                         pass
 
                 except Exception as e:
                     logger(f"Loop error: {e}")
@@ -151,75 +213,14 @@ class AgentManagerStrategy:
                         )
                         
                         if target_window:
-                            if state_callback: state_callback(STATE_WINDOW_FOUND)
+                            # if state_callback: state_callback(STATE_WINDOW_FOUND)
                             logger(f"Locked on to window: '{target_window.Name}'")
                         else:
                             stop_event.wait(interval)
                             continue
-                    else:
-                        if state_callback: state_callback(STATE_WINDOW_FOUND)
-
-                    # 2. Check Context (Recursive Search - Fixes "Target text not found")
-                    # Previously we used a custom verify_context, now we use the service which does recursive
-                    context_found = False
-                    if state_callback: state_callback(STATE_CHECKING_CONTEXT)
-                    if not context_texts:
-                        context_found = True
-                    else:
-                        # Use the service!
-                        if self.text_service.has_text_recursive(target_window, context_texts):
-                            context_found = True
-                        else:
-                            # Fallback or specific logic if needed? 
-                            # The service logic matches the IDE one which user said "didn't work since implemented agentmanager"
-                            # implying the old IDE way WAS working and they want it back.
-                            pass
-
-                    if not context_found:
-                        if state_callback: state_callback(STATE_CONTEXT_FAILED)
-                        # Don't log spam if waiting
-                        stop_event.wait(interval)
-                        continue
                     
-                    if state_callback: state_callback(STATE_CONTEXT_MATCHED)
-
-                    # 3. Look for Button
-                    if state_callback: state_callback(STATE_SEARCHING_BUTTON)
-                    found_button = self.text_service.find_button_with_text(target_window, search_texts)
-
-                    if found_button:
-                        if state_callback: state_callback(STATE_BUTTON_FOUND)
-                        btn_name = found_button.Name
-                        logger(f"Found button: '{btn_name}'")
-                        
-                        # Focus Management
-                        self.window_service.focus_window(target_window)
-                        
-                        try:
-                            found_button.Invoke()
-                            logger(f"Clicked '{btn_name}' (Invoke)")
-                            if state_callback: state_callback(STATE_ACTION_SUCCESS)
-                        except:
-                            try:
-                                found_button.Click()
-                                logger(f"Clicked '{btn_name}' (Click)")
-                                if state_callback: state_callback(STATE_ACTION_SUCCESS)
-                            except Exception as e:
-                                logger(f"Click failed: {e}")
-                                if state_callback: state_callback(STATE_ACTION_FAILED)
-                        
-                        # Back Focus ? (User asked for "back focus", interpreting as restore)
-                        # self.window_service.restore_previous_focus() 
-                        # This might be annoying if done too fast, maybe optional?
-                        # For now, let's keep it simple or enable if we want true "back focus".
-                        # Given user asked for service "back focus", I'll add a call but maybe comment out or check config?
-                        # I'll add it but assume user wants it.
-                        self.window_service.restore_previous_focus()
-
-                    else:
-                        if state_callback: state_callback(STATE_BUTTON_FAILED)
-                        # Button not found
-                        pass
+                    # 2. Process using shared logic
+                    process_window(target_window, self.text_service, self.window_service, logger, state_callback, context_texts, search_texts)
 
                 except Exception as e:
                     logger(f"Loop error: {e}")

@@ -229,7 +229,7 @@ class AutoAccepterUI:
 
     def setup_telemetry(self, parent):
         # Matplotlib Graph
-        self.fig = Figure(figsize=(5, 4), dpi=100, constrained_layout=True)
+        self.fig = Figure(figsize=(5, 4), layout="tight")
         self.ax = self.fig.add_subplot(111)
         self.ax.set_title("Automation Performance (Events/min)")
         self.ax.set_facecolor('#2b2b2b')
@@ -256,15 +256,26 @@ class AutoAccepterUI:
         
         # Use pack for better fill and centering
         tk_widget = self.canvas.get_tk_widget()
+        tk_widget.configure(background='#2b2b2b', highlightthickness=0)
         tk_widget.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Bind to configure event to fix initial layout issues
         tk_widget.bind("<Configure>", self.on_telemetry_resize)
 
     def on_telemetry_resize(self, event):
-        # Force a redraw when the widget is resized or shown
-        # This fixes the issue where centering is off until window resize
-        self.canvas.draw()
+        # Force background again in case draw resets it
+        self.canvas.get_tk_widget().configure(background='#2b2b2b')
+        self.fig.patch.set_facecolor('#2b2b2b')
+        
+        # Calculate new dimensions in inches
+        # Subtract a small buffer (4px) to avoid rounding errors causing scroll/crop
+        w, h = event.width - 4, event.height - 4
+        dpi = self.fig.get_dpi()
+        
+        # Ensure we don't set invalid sizes
+        if w > 1 and h > 1:
+            self.fig.set_size_inches(w / dpi, h / dpi)
+            self.canvas.draw_idle()
         
     def start_telemetry_loop(self):
         # Update graph every second (mock for now, or hook to service stats)
