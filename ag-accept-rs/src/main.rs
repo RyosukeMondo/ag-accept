@@ -7,18 +7,21 @@ use anyhow::Result;
 use automation::{Automation, Event};
 use config::AppConfig;
 use crossterm::event::{self, Event as CEvent, KeyCode};
-use std::fs::File;
+
 use std::sync::mpsc;
-use std::sync::Arc;
+
 use std::thread;
 use std::time::Duration;
 use ui::app::App;
 
 fn main() -> Result<()> {
     // Setup logging to file since stdout is taken by TUI
-    let file = File::create("ag-accept.log")?;
+    // Setup logging to file
+    let file_appender = tracing_appender::rolling::daily(".", "ag-accept.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
     tracing_subscriber::fmt()
-        .with_writer(Arc::new(file))
+        .with_writer(non_blocking)
         .with_ansi(false)
         .init();
 
@@ -62,8 +65,10 @@ fn main() -> Result<()> {
                 Event::Log(msg) => app.on_log(msg),
                 Event::Status(msg) => app.on_status(msg),
                 Event::VisibleWindows(wins) => app.on_visible_windows(wins),
+                Event::AllWindows(wins) => app.on_all_windows(wins),
                 Event::ContextData { button, neighbors } => app.on_context(button, neighbors),
                 Event::ProcessingWindow(win) => app.on_processing(win),
+                Event::Timing(ms) => app.on_timing(ms),
             }
         }
 

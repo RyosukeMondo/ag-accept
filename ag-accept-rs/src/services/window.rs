@@ -19,59 +19,6 @@ impl WindowService {
         self.automation.get_root_element()
     }
 
-    pub fn find_window_by_title(
-        &self,
-        title_part: &str,
-        exclude_titles: &[String],
-    ) -> Result<Option<UIElement>> {
-        let root = self.get_root()?;
-        let walker = self.automation.create_tree_walker()?;
-
-        // Manual iteration avoiding Result clone issues
-        let mut result = walker.get_first_child(&root);
-        let title_lower = title_part.to_lowercase();
-
-        while let Ok(win) = result {
-            if let Ok(name) = win.get_name() {
-                if !self.is_excluded(&name, exclude_titles) {
-                    if name.to_lowercase().contains(&title_lower) {
-                        return Ok(Some(win));
-                    }
-                }
-            }
-
-            result = walker.get_next_sibling(&win);
-        }
-
-        Ok(None)
-    }
-
-    pub fn find_all_windows_by_title(
-        &self,
-        title_part: &str,
-        exclude_titles: &[String],
-    ) -> Result<Vec<UIElement>> {
-        let root = self.get_root()?;
-        let walker = self.automation.create_tree_walker()?;
-        let mut windows = Vec::new();
-
-        let mut result = walker.get_first_child(&root);
-        let title_lower = title_part.to_lowercase();
-
-        while let Ok(win) = result {
-            if let Ok(name) = win.get_name() {
-                if !self.is_excluded(&name, exclude_titles) {
-                    if name.to_lowercase().contains(&title_lower) {
-                        windows.push(win.clone());
-                    }
-                }
-            }
-            result = walker.get_next_sibling(&win);
-        }
-
-        Ok(windows)
-    }
-
     pub fn focus_window(&mut self, window: &UIElement) -> Result<()> {
         if let Ok(current) = self.automation.get_focused_element() {
             self.previous_focus = Some(current);
@@ -90,30 +37,44 @@ impl WindowService {
         Ok(())
     }
 
-    fn is_excluded(&self, name: &str, exclude_titles: &[String]) -> bool {
-        let name_lower = name.to_lowercase();
-        for ex in exclude_titles {
-            if name_lower.contains(&ex.to_lowercase()) {
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn get_all_window_titles(&self) -> Result<Vec<String>> {
+    pub fn get_all_windows(&self) -> Result<Vec<UIElement>> {
         let root = self.get_root()?;
         let walker = self.automation.create_tree_walker()?;
-        let mut titles = Vec::new();
+        let mut windows = Vec::new();
 
         let mut result = walker.get_first_child(&root);
         while let Ok(win) = result {
-            if let Ok(name) = win.get_name() {
-                if !name.trim().is_empty() {
-                    titles.push(name);
-                }
-            }
+            windows.push(win.clone());
             result = walker.get_next_sibling(&win);
         }
-        Ok(titles)
+        Ok(windows)
+    }
+
+    pub fn get_focused_window_name(&self) -> Result<String> {
+        // 1. Get focused element
+        let focused = self.automation.get_focused_element()?;
+
+        // 2. Use TreeWalker to walk up
+        let walker = self.automation.create_tree_walker()?;
+        let root = self.automation.get_root_element()?;
+
+        let mut current = focused;
+
+        // Safety valve for infinite loop
+        for _ in 0..20 {
+            if let Ok(parent) = walker.get_parent(&current) {
+                // Check if parent is root (Desktop)
+                if let Ok(true) = self.automation.compare_elements(&parent, &root) {
+                    // Current is the top-level window
+                    return current.get_name();
+                }
+                current = parent;
+            } else {
+                break;
+            }
+        }
+
+        // Fallback
+        current.get_name()
     }
 }

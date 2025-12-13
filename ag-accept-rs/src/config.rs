@@ -1,8 +1,8 @@
+use anyhow::Result;
+use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use anyhow::Result;
-use directories::ProjectDirs;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
@@ -22,7 +22,11 @@ impl Default for AppConfig {
         Self {
             interval: 1.0,
             target_window_title: "Antigravity".to_string(),
-            search_texts_ide: vec!["Run command?".to_string(), "Reject".to_string(), "Accept".to_string()],
+            search_texts_ide: vec![
+                "Run command?".to_string(),
+                "Reject".to_string(),
+                "Accept".to_string(),
+            ],
             search_texts_agent_manager: vec!["Accept".to_string()],
             context_text_agent_manager: vec!["Run command?".to_string()],
             mode: "AgentManager".to_string(),
@@ -36,10 +40,19 @@ impl Default for AppConfig {
 impl AppConfig {
     pub fn load() -> Result<Self> {
         let config_path = Self::get_config_path();
-        
+
         if config_path.exists() {
             let content = fs::read_to_string(&config_path)?;
-            let config: AppConfig = serde_json::from_str(&content)?;
+            let mut config: AppConfig = serde_json::from_str(&content)?;
+            // Sanitize: Remove empty strings to prevent "match all" bugs
+            config.search_texts_ide.retain(|s| !s.trim().is_empty());
+            config
+                .search_texts_agent_manager
+                .retain(|s| !s.trim().is_empty());
+            config
+                .context_text_agent_manager
+                .retain(|s| !s.trim().is_empty());
+
             // In a real app we might want to merge with defaults to handle new keys,
             // but for now strict loading is fine, or we can fallback.
             Ok(config)
