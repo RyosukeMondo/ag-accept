@@ -2,6 +2,7 @@ mod automation;
 mod config;
 mod services;
 mod ui;
+mod platform;
 
 use anyhow::Result;
 use automation::{Automation, Event};

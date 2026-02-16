@@ -131,7 +131,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             // We need spans to color JUST the status part?
             // Ratatui ListItems can take a Line which has Spans.
 
-            let mut spans = vec![
+            let spans = vec![
                 Span::styled("[", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     format!("{:^6}", status_str),

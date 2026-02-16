@@ -1,19 +1,18 @@
 use crate::config::AppConfig;
 use crate::services::query::QueryService;
 use crate::services::window::WindowService;
+use crate::platform::{Element, PlatformElement};
 use std::collections::HashMap;
 use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::{Duration, Instant};
-use tracing::{error, info}; // removed unused debug
-use uiautomation::patterns::UIInvokePattern;
-use uiautomation::Result;
-use uiautomation::UIElement;
+use tracing::{error, info};
 
 #[derive(Clone, Debug)]
 pub struct WindowStat {
     pub title: String,
     pub duration_ms: u64,
+    #[allow(dead_code)]
     pub is_target: bool,
     pub is_focused: bool,
 }
@@ -36,13 +35,13 @@ pub struct Automation {
     query_service: QueryService,
     config: AppConfig,
     sender: Option<Sender<Event>>,
-    cached_button: Option<UIElement>,
-    cached_ancestry: Vec<UIElement>, // Layered Cache: Parent -> Grandparent -> ...
+    cached_button: Option<PlatformElement>,
+    cached_ancestry: Vec<PlatformElement>, // Layered Cache: Parent -> Grandparent -> ...
     last_durations: HashMap<String, u64>,
 }
 
 impl Automation {
-    pub fn new(config: AppConfig, sender: Option<Sender<Event>>) -> Result<Self> {
+    pub fn new(config: AppConfig, sender: Option<Sender<Event>>) -> anyhow::Result<Self> {
         Ok(Self {
             window_service: WindowService::new()?,
             query_service: QueryService::new()?,
@@ -75,7 +74,7 @@ impl Automation {
         }
     }
 
-    pub fn run(&mut self) -> Result<()> {
+    pub fn run(&mut self) -> anyhow::Result<()> {
         self.log("Starting Automation Loop...".to_string());
         let interval = Duration::from_secs_f64(self.config.interval);
 
@@ -86,7 +85,9 @@ impl Automation {
 
             match self.cycle() {
                 Ok(hl) => high_load = hl,
-                Err(_e) => {}
+                Err(e) => {
+                    error!("Cycle error: {}", e);
+                }
             }
 
             let duration = start.elapsed();
@@ -111,7 +112,7 @@ impl Automation {
         }
     }
 
-    fn cycle(&mut self) -> Result<bool> {
+    fn cycle(&mut self) -> anyhow::Result<bool> {
         let target_title = &self.config.target_window_title;
         let target_lower = target_title.to_lowercase();
         let focused_name = self
@@ -186,9 +187,7 @@ impl Automation {
 
         // --- TIER 2 Checking (Ancestry) ---
         // (Optimized: Checking cached ancestry before full scan)
-        // ... (Ancestry logic omitted for brevity, keeping simple for this refactor to focus on stability)
-        // Actually we should keep ancestry logic. It's safe to keep.
-
+        
         let ancestors = self.cached_ancestry.clone();
         for ancestor in ancestors.iter() {
             if let Ok(_) = ancestor.get_name() {
@@ -290,25 +289,22 @@ impl Automation {
         Ok(high_load_detected)
     }
 
-    fn perform_action(&self, button: UIElement, _win_name: String) {
+    fn perform_action(&self, button: PlatformElement, _win_name: String) {
         let btn_name = button.get_name().unwrap_or_default();
         let mut success = false;
 
         // Try Invoke
-        if let Ok(pattern) = button.get_pattern::<UIInvokePattern>() {
-            if let Ok(_) = pattern.invoke() {
-                self.log(format!("Clicked '{}' (Invoke)", btn_name));
-                success = true;
-            }
+        if let Ok(_) = button.invoke() {
+            self.log(format!("Clicked '{}' (Invoke)", btn_name));
+            success = true;
         }
 
         // Fallback: Click
         if !success {
             // Validate coordinates first
             if let Ok(pt) = button.get_clickable_point() {
-                // Use debug formatting to avoid private field access issues
-                let pt_str = format!("{:?}", pt);
-                if pt_str.contains("x: 0") && pt_str.contains("y: 0") {
+                // Check for (0,0) - simplified check
+                if pt.0 == 0 && pt.1 == 0 {
                     self.log(format!(
                         "Skipping click: Invalid coordinates (0,0) for '{}'",
                         btn_name

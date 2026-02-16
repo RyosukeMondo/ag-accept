@@ -1,61 +1,43 @@
-use uiautomation::types::TreeScope;
-use uiautomation::Result;
-use uiautomation::UIAutomation;
-use uiautomation::UIElement;
+use crate::platform::{Backend, PlatformBackend, PlatformElement, Scope};
+use anyhow::Result;
 
 pub struct QueryService {
-    automation: UIAutomation,
+    backend: PlatformBackend,
 }
 
 impl QueryService {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            automation: UIAutomation::new()?,
+            backend: PlatformBackend::new()?,
         })
     }
 
-    fn get_element_repr(&self, element: &UIElement) -> String {
+    fn get_element_repr(&self, element: &PlatformElement) -> String {
+        use crate::platform::Element;
         let name = element.get_name().unwrap_or_default();
         if !name.trim().is_empty() {
             return format!("\"{}\"", name);
         } else {
             if let Ok(ctype) = element.get_control_type() {
-                return format!("[Type:{:?}]", ctype);
+                return format!("[Type:{}]", ctype);
             }
         }
         "<Unknown>".to_string()
     }
 
-    pub fn inspect_siblings(&self, element: &UIElement) -> Result<Vec<String>> {
-        let walker = self.automation.create_tree_walker()?;
+    pub fn inspect_siblings(&self, element: &PlatformElement) -> Result<Vec<String>> {
         let mut siblings = Vec::new();
+        let (prev_list, next_list) = self.backend.get_siblings(element)?;
 
-        // 2 Previous
-        let mut prev_list = Vec::new();
-        let mut curr = element.clone();
-        for _ in 0..2 {
-            if let Ok(prev) = walker.get_previous_sibling(&curr) {
-                prev_list.push(format!("Prev: {}", self.get_element_repr(&prev)));
-                curr = prev;
-            } else {
-                break;
-            }
+        for prev in prev_list {
+            siblings.push(format!("Prev: {}", self.get_element_repr(&prev)));
         }
-        prev_list.reverse(); // So oldest is first
-        siblings.extend(prev_list);
-
+        
         // Current
         siblings.push(format!("*MATCH*: {}", self.get_element_repr(element)));
 
-        // 2 Next
-        let mut curr = element.clone();
-        for _ in 0..2 {
-            if let Ok(next) = walker.get_next_sibling(&curr) {
-                siblings.push(format!("Next: {}", self.get_element_repr(&next)));
-                curr = next;
-            } else {
-                break;
-            }
+        for next in next_list {
+            siblings.push(format!("Next: {}", self.get_element_repr(&next)));
         }
 
         Ok(siblings)
@@ -63,13 +45,13 @@ impl QueryService {
 
     pub fn scan_for_context_and_button(
         &self,
-        root: &UIElement,
+        root: &PlatformElement,
         context_text: &[String],
         button_text: &[String],
-    ) -> Result<(bool, Option<UIElement>)> {
-        // Bulk Optimization: Get ALL descendants in one COM call
-        let condition = self.automation.create_true_condition()?;
-        let elements = root.find_all(TreeScope::Descendants, &condition)?;
+    ) -> Result<(bool, Option<PlatformElement>)> {
+        use crate::platform::Element;
+        // Bulk Optimization: Get ALL descendants in one COM call (on Windows)
+        let elements = root.find_elements(Scope::Descendants)?;
 
         let mut ctx_found = false;
         let mut btn_found = None;
@@ -95,8 +77,8 @@ impl QueryService {
                     for part in button_text {
                         if name.contains(part) {
                             if let Ok(ctype) = element.get_control_type() {
-                                let type_str = format!("{:?}", ctype);
-                                if type_str.contains("Button") || type_str.contains("Hyperlink") {
+                                // ctype is already a String in our abstraction
+                                if ctype.contains("Button") || ctype.contains("Hyperlink") {
                                     btn_found = Some(element.clone());
                                 }
                             }
@@ -113,14 +95,13 @@ impl QueryService {
         Ok((ctx_found, btn_found))
     }
 
-    pub fn get_ancestry(&self, element: &UIElement) -> Result<Vec<UIElement>> {
-        let walker = self.automation.create_tree_walker()?;
+    pub fn get_ancestry(&self, element: &PlatformElement) -> Result<Vec<PlatformElement>> {
         let mut ancestors = Vec::new();
         let mut curr = element.clone();
 
         // Walk up max 10 levels to avoid infinite loops if tree is cyclic (rare but safe)
         for _ in 0..10 {
-            if let Ok(parent) = walker.get_parent(&curr) {
+            if let Ok(parent) = self.backend.get_parent(&curr) {
                 ancestors.push(parent.clone());
                 curr = parent;
             } else {

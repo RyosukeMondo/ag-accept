@@ -155,3 +155,13 @@ cython_debug/
 
 # VS Code
 # .vscode/
+
+# Log files
+*.log.*
+
+# Test binaries
+ag-accept-rs/test
+
+# IDE/workflow
+.serena/
+.spec-workflow/
