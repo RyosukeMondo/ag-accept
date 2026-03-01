@@ -18,7 +18,7 @@ class ConfigService:
             "interval": 1.0,
             "target_window_title": "Antigravity",
             "search_texts_ide": ["Run command?", "Reject", "Accept"],
-            "search_texts_agent_manager": ["Accept"],
+            "search_texts_agent_manager": ["Accept", "Allow This Conversation"],
             "context_text_agent_manager": ["Run command?"],
             "mode": "AgentManager",
             "debug_enabled": False,

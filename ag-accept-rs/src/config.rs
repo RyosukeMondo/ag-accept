@@ -27,8 +27,14 @@ impl Default for AppConfig {
                 "Reject".to_string(),
                 "Accept".to_string(),
             ],
-            search_texts_agent_manager: vec!["Accept".to_string()],
-            context_text_agent_manager: vec!["Run command?".to_string()],
+            search_texts_agent_manager: vec![
+                "Accept".to_string(),
+                "Allow This Conversation".to_string(),
+            ],
+            context_text_agent_manager: vec![
+                "Run command?".to_string(),
+                "Allow This Conversation".to_string(),
+            ],
             mode: "AgentManager".to_string(),
             debug_enabled: false,
             window_width: 600,

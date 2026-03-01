@@ -165,3 +165,6 @@ ag-accept-rs/test
 # IDE/workflow
 .serena/
 .spec-workflow/
+
+*_dump.py
+*_dump.txt
